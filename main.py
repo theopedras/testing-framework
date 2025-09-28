@@ -1,11 +1,9 @@
-# 1. Implementação da classe TestResult, conforme descrito na seção 3.
+# =================================================================
+# 1. Framework Core Classes (das seções anteriores)
+# =================================================================
+
 class TestResult:
-
-    RUN_MSG = 'run'
-    FAILURE_MSG = 'failed'
-    ERROR_MSG = 'error'
-
-    def __init__(self, suite_name=None):
+    def __init__(self):
         self.run_count = 0
         self.failures = []
         self.errors = []
@@ -20,13 +18,11 @@ class TestResult:
         self.errors.append(test_name)
 
     def summary(self):
-        return f'{self.run_count} {self.RUN_MSG}, ' \
-               f'{len(self.failures)} {self.FAILURE_MSG}, ' \
-               f'{len(self.errors)} {self.ERROR_MSG}'
+        return (f'{self.run_count} run, '
+                f'{len(self.failures)} failed, '
+                f'{len(self.errors)} error')
 
-# 2. Classe TestCase atualizada com o método run() modificado.
 class TestCase:
-
     def __init__(self, test_method_name):
         self.test_method_name = test_method_name
 
@@ -40,55 +36,119 @@ class TestCase:
         result.test_started()
         self.set_up()
         try:
-            test_method = getattr(self, self.test_method_name)
-            test_method()
-        except AssertionError as e:
+            method = getattr(self, self.test_method_name)
+            method()
+        except AssertionError:
             result.add_failure(self.test_method_name)
-        except Exception as e:
+        except Exception:
             result.add_error(self.test_method_name)
-        
-        # Conforme o texto, tear_down() é chamado após o bloco try/except.
-        # Uma implementação mais robusta usaria um bloco `finally` para garantir
-        # que tear_down() execute mesmo se set_up() falhar.
-        self.tear_down()
+        finally:
+            # Usar `finally` é mais robusto para garantir que tear_down sempre rode
+            self.tear_down()
 
-# 3. Classe de exemplo para demonstrar os diferentes resultados.
-class ExampleTest(TestCase):
-    
-    def test_method_pass(self):
-        # Este teste deve passar
-        print("Executando test_method_pass...")
-        pass
+# =================================================================
+# 2. Helper Classes for Testing (descritas na Seção 4)
+# =================================================================
 
-    def test_method_fail(self):
-        # Este teste deve falhar (AssertionError)
-        print("Executando test_method_fail...")
-        assert 1 == 2
+# TestStub simula testes com diferentes resultados
+class TestStub(TestCase):
+    def test_success(self):
+        assert True
 
-    def test_method_error(self):
-        # Este teste deve gerar um erro (Exception)
-        print("Executando test_method_error...")
-        result = 1 / 0
+    def test_failure(self):
+        assert False
 
-# 4. Execução dos testes e exibição do sumário.
-print("Iniciando a execução dos testes com coleta de resultados...")
+    def test_error(self):
+        raise Exception("This is a generic error")
 
-# Cria a instância do coletor de resultados
+# TestSpy "espiona" a execução do template method
+class TestSpy(TestCase):
+    def __init__(self, name):
+        super().__init__(name)
+        self.was_run = False
+        self.was_set_up = False
+        self.was_tear_down = False
+        self.log = ""
+
+    def set_up(self):
+        self.was_set_up = True
+        self.log += "set_up "
+
+    def test_method(self):
+        self.was_run = True
+        self.log += "test_method "
+
+    def tear_down(self):
+        self.was_tear_down = True
+        self.log += "tear_down"
+
+# =================================================================
+# 3. The Test Class for TestCase (a classe principal desta seção)
+# =================================================================
+
+class TestCaseTest(TestCase):
+    def set_up(self):
+        self.result = TestResult()
+
+    # Testes usando TestStub
+    def test_result_success_run(self):
+        stub = TestStub('test_success')
+        stub.run(self.result)
+        assert self.result.summary() == '1 run, 0 failed, 0 error'
+
+    def test_result_failure_run(self):
+        stub = TestStub('test_failure')
+        stub.run(self.result)
+        assert self.result.summary() == '1 run, 1 failed, 0 error'
+
+    def test_result_error_run(self):
+        stub = TestStub('test_error')
+        stub.run(self.result)
+        assert self.result.summary() == '1 run, 0 failed, 1 error'
+
+    def test_result_multiple_run(self):
+        TestStub('test_success').run(self.result)
+        TestStub('test_failure').run(self.result)
+        TestStub('test_error').run(self.result)
+        assert self.result.summary() == '3 run, 1 failed, 1 error'
+
+    # Testes usando TestSpy
+    def test_was_set_up(self):
+        spy = TestSpy('test_method')
+        spy.run(self.result)
+        assert spy.was_set_up
+
+    def test_was_run(self):
+        spy = TestSpy('test_method')
+        spy.run(self.result)
+        assert spy.was_run
+
+    def test_was_tear_down(self):
+        spy = TestSpy('test_method')
+        spy.run(self.result)
+        assert spy.was_tear_down
+
+    def test_template_method(self):
+        spy = TestSpy('test_method')
+        spy.run(self.result)
+        assert spy.log == "set_up test_method tear_down"
+
+# =================================================================
+# 4. Execution of the Tests
+# =================================================================
+print("Executando os testes da classe TestCaseTest...")
+
 result = TestResult()
 
-# Executa o teste que passa
-ExampleTest('test_method_pass').run(result)
+# Executa todos os 8 métodos de teste de TestCaseTest
+TestCaseTest('test_result_success_run').run(result)
+TestCaseTest('test_result_failure_run').run(result)
+TestCaseTest('test_result_error_run').run(result)
+TestCaseTest('test_result_multiple_run').run(result)
+TestCaseTest('test_was_set_up').run(result)
+TestCaseTest('test_was_run').run(result)
+TestCaseTest('test_was_tear_down').run(result)
+TestCaseTest('test_template_method').run(result)
 
-# Executa o teste que falha
-ExampleTest('test_method_fail').run(result)
-
-# Executa o teste que gera erro
-ExampleTest('test_method_error').run(result)
-
-# Imprime o sumário final
-print("\n--- Sumário ---")
+print("\n--- Sumário Final ---")
 print(result.summary())
-
-# Opcional: ver quais testes falharam/erraram
-print(f"Testes com falha: {result.failures}")
-print(f"Testes com erro: {result.errors}")
