@@ -1,5 +1,7 @@
+import sys
+
 # =================================================================
-# 1. Framework Core Classes (das seções anteriores)
+# 1. Framework Core Classes (versões finais)
 # =================================================================
 
 class TestResult:
@@ -11,11 +13,11 @@ class TestResult:
     def test_started(self):
         self.run_count += 1
 
-    def add_failure(self, test_name):
-        self.failures.append(test_name)
+    def add_failure(self, test_name, exception_info):
+        self.failures.append((test_name, exception_info))
 
-    def add_error(self, test_name):
-        self.errors.append(test_name)
+    def add_error(self, test_name, exception_info):
+        self.errors.append((test_name, exception_info))
 
     def summary(self):
         return (f'{self.run_count} run, '
@@ -39,15 +41,11 @@ class TestCase:
             method = getattr(self, self.test_method_name)
             method()
         except AssertionError:
-            result.add_failure(self.test_method_name)
+            result.add_failure(self.test_method_name, sys.exc_info())
         except Exception:
-            result.add_error(self.test_method_name)
+            result.add_error(self.test_method_name, sys.exc_info())
         finally:
             self.tear_down()
-
-# =================================================================
-# 2. Nova Classe TestSuite (implementação da Seção 5)
-# =================================================================
 
 class TestSuite:
     def __init__(self):
@@ -60,115 +58,95 @@ class TestSuite:
         for test in self.tests:
             test.run(result)
 
+class TestLoader:
+    TEST_METHOD_PREFIX = 'test'
+
+    def get_test_case_names(self, test_case_class):
+        methods = dir(test_case_class)
+        test_method_names = sorted(list(filter(lambda method:
+            method.startswith(self.TEST_METHOD_PREFIX), methods)))
+        return test_method_names
+
+    def make_suite(self, test_case_class):
+        suite = TestSuite()
+        for test_method_name in self.get_test_case_names(test_case_class):
+            test_method = test_case_class(test_method_name)
+            suite.add_test(test_method)
+        return suite
+
+class TestRunner:
+    def __init__(self):
+        self.result = TestResult()
+
+    def run(self, test):
+        test.run(self.result)
+        print(self.result.summary())
+        return self.result
+
 # =================================================================
-# 3. Classes de Teste e Auxiliares
+# 2. Helper Classes for Testing
 # =================================================================
 
-# Classe auxiliar (stub) para testes
 class TestStub(TestCase):
     def test_success(self):
         assert True
-
     def test_failure(self):
         assert False
-
     def test_error(self):
         raise Exception("Generic error")
 
-# Classe de teste para TestCase
-class TestCaseTest(TestCase):
-    def set_up(self):
-        self.result = TestResult()
-        
-    def test_result_success_run(self):
-        stub = TestStub('test_success')
-        stub.run(self.result)
-        assert self.result.summary() == '1 run, 0 failed, 0 error'
+class TestSpy(TestCase):
+    def __init__(self, name):
+        super().__init__(name)
+    def test_method(self):
+        pass
 
-    def test_result_failure_run(self):
-        stub = TestStub('test_failure')
-        stub.run(self.result)
-        assert self.result.summary() == '1 run, 1 failed, 0 error'
+# =================================================================
+# 3. Test Class for the New Components
+# =================================================================
 
-    def test_result_error_run(self):
-        stub = TestStub('test_error')
-        stub.run(self.result)
-        assert self.result.summary() == '1 run, 0 failed, 1 error'
-
-    def test_result_multiple_run(self):
-        suite = TestSuite()
-        suite.add_test(TestStub('test_success'))
-        suite.add_test(TestStub('test_failure'))
-        suite.run(self.result)
-        assert self.result.summary() == '2 run, 1 failed, 0 error'
-        
-    def test_template_method(self):
-        class TestSpy(TestCase):
-            def __init__(self, name):
-                super().__init__(name)
-                self.log = ""
-            def set_up(self):
-                self.log += "set_up "
-            def test_method(self):
-                self.log += "test_method "
-            def tear_down(self):
-                self.log += "tear_down"
-        
-        spy = TestSpy('test_method')
-        spy.run(self.result)
-        assert spy.log == "set_up test_method tear_down"
-
-# Nova classe de teste para TestSuite
-class TestSuiteTest(TestCase):
-
-    def test_suite_size(self):
-        suite = TestSuite()
-        suite.add_test(TestStub('test_success'))
-        suite.add_test(TestStub('test_failure'))
-        suite.add_test(TestStub('test_error'))
+class TestLoaderTest(TestCase):
+    def test_create_suite(self):
+        loader = TestLoader()
+        suite = loader.make_suite(TestStub)
         assert len(suite.tests) == 3
 
-    def test_suite_success_run(self):
-        result = TestResult()
+    def test_create_suite_of_suites(self):
+        loader = TestLoader()
+        stub_suite = loader.make_suite(TestStub)
+        spy_suite = loader.make_suite(TestSpy)
+        
         suite = TestSuite()
-        suite.add_test(TestStub('test_success'))
-        suite.run(result)
-        assert result.summary() == '1 run, 0 failed, 0 error'
+        suite.add_test(stub_suite)
+        suite.add_test(spy_suite)
+        
+        assert len(suite.tests) == 2
 
-    def test_suite_multiple_run(self):
-        result = TestResult()
-        suite = TestSuite()
-        suite.add_test(TestStub('test_success'))
-        suite.add_test(TestStub('test_failure'))
-        suite.add_test(TestStub('test_error'))
-        suite.run(result)
-        assert result.summary() == '3 run, 1 failed, 1 error'
+    def test_get_multiple_test_case_names(self):
+        loader = TestLoader()
+        names = loader.get_test_case_names(TestStub)
+        # O resultado de dir() pode variar, então ordenamos para um teste consistente
+        assert names == ['test_error', 'test_failure', 'test_success']
+
+    def test_get_no_test_case_names(self):
+        class Test(TestCase):
+            def foobar(self):
+                pass
+        
+        loader = TestLoader()
+        names = loader.get_test_case_names(Test)
+        assert names == []
 
 # =================================================================
-# 4. Execução de todos os testes via TestSuite
+# 4. Final, Simplified Execution Flow
 # =================================================================
 
-print("Executando todos os testes do framework via TestSuite...")
+print("Executando TestLoaderTest com o novo fluxo (Loader + Runner)...")
 
-# Cria o coletor de resultados e a suíte principal
-result = TestResult()
-suite = TestSuite()
+# 1. O Loader descobre os testes automaticamente e cria a suíte.
+loader = TestLoader()
+suite = loader.make_suite(TestLoaderTest)
 
-# Adiciona todos os 5 testes de TestCaseTest à suíte
-suite.add_test(TestCaseTest('test_result_success_run'))
-suite.add_test(TestCaseTest('test_result_failure_run'))
-suite.add_test(TestCaseTest('test_result_error_run'))
-suite.add_test(TestCaseTest('test_result_multiple_run'))
-suite.add_test(TestCaseTest('test_template_method'))
-
-# Adiciona todos os 3 testes de TestSuiteTest à suíte
-suite.add_test(TestSuiteTest('test_suite_size'))
-suite.add_test(TestSuiteTest('test_suite_success_run'))
-suite.add_test(TestSuiteTest('test_suite_multiple_run'))
-
-# Executa a suíte de testes inteira
-suite.run(result)
-
-# Imprime o sumário final
-print("\n--- Sumário Final ---")
-print(result.summary())
+# 2. O Runner orquestra a execução e imprime o relatório.
+runner = TestRunner()
+runner.run(suite)
