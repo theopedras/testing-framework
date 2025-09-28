@@ -43,14 +43,28 @@ class TestCase:
         except Exception:
             result.add_error(self.test_method_name)
         finally:
-            # Usar `finally` é mais robusto para garantir que tear_down sempre rode
             self.tear_down()
 
 # =================================================================
-# 2. Helper Classes for Testing (descritas na Seção 4)
+# 2. Nova Classe TestSuite (implementação da Seção 5)
 # =================================================================
 
-# TestStub simula testes com diferentes resultados
+class TestSuite:
+    def __init__(self):
+        self.tests = []
+
+    def add_test(self, test):
+        self.tests.append(test)
+
+    def run(self, result):
+        for test in self.tests:
+            test.run(result)
+
+# =================================================================
+# 3. Classes de Teste e Auxiliares
+# =================================================================
+
+# Classe auxiliar (stub) para testes
 class TestStub(TestCase):
     def test_success(self):
         assert True
@@ -59,38 +73,13 @@ class TestStub(TestCase):
         assert False
 
     def test_error(self):
-        raise Exception("This is a generic error")
+        raise Exception("Generic error")
 
-# TestSpy "espiona" a execução do template method
-class TestSpy(TestCase):
-    def __init__(self, name):
-        super().__init__(name)
-        self.was_run = False
-        self.was_set_up = False
-        self.was_tear_down = False
-        self.log = ""
-
-    def set_up(self):
-        self.was_set_up = True
-        self.log += "set_up "
-
-    def test_method(self):
-        self.was_run = True
-        self.log += "test_method "
-
-    def tear_down(self):
-        self.was_tear_down = True
-        self.log += "tear_down"
-
-# =================================================================
-# 3. The Test Class for TestCase (a classe principal desta seção)
-# =================================================================
-
+# Classe de teste para TestCase
 class TestCaseTest(TestCase):
     def set_up(self):
         self.result = TestResult()
-
-    # Testes usando TestStub
+        
     def test_result_success_run(self):
         stub = TestStub('test_success')
         stub.run(self.result)
@@ -107,48 +96,79 @@ class TestCaseTest(TestCase):
         assert self.result.summary() == '1 run, 0 failed, 1 error'
 
     def test_result_multiple_run(self):
-        TestStub('test_success').run(self.result)
-        TestStub('test_failure').run(self.result)
-        TestStub('test_error').run(self.result)
-        assert self.result.summary() == '3 run, 1 failed, 1 error'
-
-    # Testes usando TestSpy
-    def test_was_set_up(self):
-        spy = TestSpy('test_method')
-        spy.run(self.result)
-        assert spy.was_set_up
-
-    def test_was_run(self):
-        spy = TestSpy('test_method')
-        spy.run(self.result)
-        assert spy.was_run
-
-    def test_was_tear_down(self):
-        spy = TestSpy('test_method')
-        spy.run(self.result)
-        assert spy.was_tear_down
-
+        suite = TestSuite()
+        suite.add_test(TestStub('test_success'))
+        suite.add_test(TestStub('test_failure'))
+        suite.run(self.result)
+        assert self.result.summary() == '2 run, 1 failed, 0 error'
+        
     def test_template_method(self):
+        class TestSpy(TestCase):
+            def __init__(self, name):
+                super().__init__(name)
+                self.log = ""
+            def set_up(self):
+                self.log += "set_up "
+            def test_method(self):
+                self.log += "test_method "
+            def tear_down(self):
+                self.log += "tear_down"
+        
         spy = TestSpy('test_method')
         spy.run(self.result)
         assert spy.log == "set_up test_method tear_down"
 
-# =================================================================
-# 4. Execution of the Tests
-# =================================================================
-print("Executando os testes da classe TestCaseTest...")
+# Nova classe de teste para TestSuite
+class TestSuiteTest(TestCase):
 
+    def test_suite_size(self):
+        suite = TestSuite()
+        suite.add_test(TestStub('test_success'))
+        suite.add_test(TestStub('test_failure'))
+        suite.add_test(TestStub('test_error'))
+        assert len(suite.tests) == 3
+
+    def test_suite_success_run(self):
+        result = TestResult()
+        suite = TestSuite()
+        suite.add_test(TestStub('test_success'))
+        suite.run(result)
+        assert result.summary() == '1 run, 0 failed, 0 error'
+
+    def test_suite_multiple_run(self):
+        result = TestResult()
+        suite = TestSuite()
+        suite.add_test(TestStub('test_success'))
+        suite.add_test(TestStub('test_failure'))
+        suite.add_test(TestStub('test_error'))
+        suite.run(result)
+        assert result.summary() == '3 run, 1 failed, 1 error'
+
+# =================================================================
+# 4. Execução de todos os testes via TestSuite
+# =================================================================
+
+print("Executando todos os testes do framework via TestSuite...")
+
+# Cria o coletor de resultados e a suíte principal
 result = TestResult()
+suite = TestSuite()
 
-# Executa todos os 8 métodos de teste de TestCaseTest
-TestCaseTest('test_result_success_run').run(result)
-TestCaseTest('test_result_failure_run').run(result)
-TestCaseTest('test_result_error_run').run(result)
-TestCaseTest('test_result_multiple_run').run(result)
-TestCaseTest('test_was_set_up').run(result)
-TestCaseTest('test_was_run').run(result)
-TestCaseTest('test_was_tear_down').run(result)
-TestCaseTest('test_template_method').run(result)
+# Adiciona todos os 5 testes de TestCaseTest à suíte
+suite.add_test(TestCaseTest('test_result_success_run'))
+suite.add_test(TestCaseTest('test_result_failure_run'))
+suite.add_test(TestCaseTest('test_result_error_run'))
+suite.add_test(TestCaseTest('test_result_multiple_run'))
+suite.add_test(TestCaseTest('test_template_method'))
 
+# Adiciona todos os 3 testes de TestSuiteTest à suíte
+suite.add_test(TestSuiteTest('test_suite_size'))
+suite.add_test(TestSuiteTest('test_suite_success_run'))
+suite.add_test(TestSuiteTest('test_suite_multiple_run'))
+
+# Executa a suíte de testes inteira
+suite.run(result)
+
+# Imprime o sumário final
 print("\n--- Sumário Final ---")
 print(result.summary())
